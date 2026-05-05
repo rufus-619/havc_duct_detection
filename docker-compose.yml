@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      # These can be overridden in .env file (12-factor: config in environment)
+      - HVAC_MAX_FILE_MB=${HVAC_MAX_FILE_MB:-10}
+      - HVAC_OCR_TIMEOUT_S=${HVAC_OCR_TIMEOUT_S:-15}
+      - HVAC_PADDING_PX=${HVAC_PADDING_PX:-150}
+      - HVAC_MIN_OCR_CONF=${HVAC_MIN_OCR_CONF:-0.30}
+      - HVAC_AI_VERIFY_THRESHOLD=${HVAC_AI_VERIFY_THRESHOLD:-0.60}
+      - HVAC_LOG_LEVEL=${HVAC_LOG_LEVEL:-INFO}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

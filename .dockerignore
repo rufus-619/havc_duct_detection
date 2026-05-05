@@ -1,0 +1,54 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov/
+
+# Documentation
+README.md
+VIDEO_SCRIPT.md
+docs/
+
+# Debug outputs (large files)
+debug_images/*.png
+debug_images/*.jpg
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore

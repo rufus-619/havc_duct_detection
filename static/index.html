@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HVAC Duct Analyzer</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+        .container { max-width: 1400px; margin: 0 auto; display: flex; gap: 20px; }
+        .sidebar { width: 350px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; flex-direction: column; flex-shrink: 0; }
+        .main { flex-grow: 1; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* Image Viewer Styles */
+        .viewer-container {
+            position: relative;
+            width: 100%;
+            height: 600px;
+            background: #e9ecef;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            overflow: hidden; /* Hide scrollbars, we use transform panning now */
+            cursor: grab;
+            user-select: none;
+        }
+        .viewer-container:active, .viewer-container.panning {
+            cursor: grabbing;
+        }
+        .image-wrapper {
+            transform-origin: 0 0;
+            will-change: transform;
+            display: inline-block;
+        }
+        #canvas {
+            display: block;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            background: white;
+        }
+        
+        /* Zoom Controls */
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+        }
+        .zoom-btn {
+            background: #fff;
+            border: 1px solid #ced4da;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            color: #495057;
+            transition: background 0.2s;
+        }
+        .zoom-btn:hover { background: #e2e6ea; }
+        .zoom-level {
+            min-width: 60px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+        .download-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            margin-left: auto;
+            transition: background 0.2s, opacity 0.2s;
+        }
+        .download-btn:hover { background: #218838; }
+        .download-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        
+        .detail-panel { margin-top: 20px; padding: 15px; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; }
+        .btn { background: #0066cc; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 10px; width: 100%; font-weight: 600; }
+        .btn:hover { background: #0052a3; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
+        th, td { border: 1px solid #dee2e6; padding: 10px; text-align: left; }
+        th { background-color: #f8f9fa; font-weight: 600; }
+        .loading { display: none; color: #0052a3; margin-top: 15px; font-weight: 500; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h2 style="margin-top:0;">HVAC Analyzer</h2>
+            <form id="uploadForm">
+                <input type="file" id="fileInput" accept=".png,.jpg,.jpeg,.pdf" required style="width: 100%; margin-bottom: 10px;">
+                <button type="submit" class="btn">Analyze Blueprint</button>
+            </form>
+            <div id="loading" class="loading">Processing... please wait.</div>
+            
+            <div id="telemetryPanel" style="display: none; margin-top: 20px;">
+                <h3 style="margin-bottom: 10px;">Telemetry</h3>
+                <div id="telemetryData" style="font-size: 14px; color: #495057;"></div>
+            </div>
+
+            <div id="detailPanel" class="detail-panel" style="display: none;">
+                <h3 style="margin-top:0; margin-bottom: 10px;">Segment Details</h3>
+                <div id="segmentDetails" style="font-size: 14px;"></div>
+            </div>
+        </div>
+        <div class="main">
+            <div class="zoom-controls">
+                <button class="zoom-btn" id="zoomOut" title="Zoom Out">-</button>
+                <span class="zoom-level" id="zoomLevel">100%</span>
+                <button class="zoom-btn" id="zoomIn" title="Zoom In">+</button>
+                <button class="zoom-btn" id="zoomReset" title="Reset View">Fit to View</button>
+                <button class="download-btn" id="downloadBtn" disabled>Download Image</button>
+            </div>
+            
+            <div id="canvasContainer" class="viewer-container">
+                <div class="image-wrapper" id="imageWrapper">
+                    <canvas id="canvas"></canvas>
+                </div>
+            </div>
+            
+            <div id="tableContainer" style="display: none; overflow-y: auto; margin-top: 20px;">
+                <h3 style="margin-top:0;">Summary</h3>
+                <table id="summaryTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Type</th>
+                            <th>Dims</th>
+                            <th>Length (ft)</th>
+                            <th>Confidence</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const fileInput = document.getElementById('fileInput');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const detailPanel = document.getElementById('detailPanel');
+        const segmentDetails = document.getElementById('segmentDetails');
+        
+        let segments = [];
+        let imageMetadata = null;
+        let annotatedImage = new Image();
+
+        // =====================
+        // ZOOM AND PAN STATE
+        // =====================
+        const canvasContainer = document.getElementById('canvasContainer');
+        const imageWrapper = document.getElementById('imageWrapper');
+        const zoomLevelDisplay = document.getElementById('zoomLevel');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        let scale = 1.0;
+        let panX = 0;
+        let panY = 0;
+        let isDragging = false;
+        let startClientX = 0, startClientY = 0;
+        let startPanX = 0, startPanY = 0;
+
+        // Apply CSS Transforms
+        function updateTransform() {
+            imageWrapper.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+            zoomLevelDisplay.textContent = Math.round(scale * 100) + '%';
+        }
+
+        // Center and Fit image into viewport
+        function fitToWidth() {
+            if (!annotatedImage.src || !annotatedImage.width) return;
+            const containerWidth = canvasContainer.clientWidth;
+            const containerHeight = canvasContainer.clientHeight;
+            
+            // Calculate scale to fit with a small 20px padding
+            const scaleX = (containerWidth - 40) / canvas.width;
+            const scaleY = (containerHeight - 40) / canvas.height;
+            scale = Math.min(scaleX, scaleY, 1.0); // Don't scale up past 100% initially
+            
+            // Center it
+            panX = (containerWidth - (canvas.width * scale)) / 2;
+            panY = (containerHeight - (canvas.height * scale)) / 2;
+            
+            updateTransform();
+        }
+
+        // Convert screen coordinates (mouse) to actual canvas pixel coordinates
+        function getCanvasCoordinates(clientX, clientY) {
+            const rect = canvasContainer.getBoundingClientRect();
+            // Get position relative to the container, minus the panning offset, divided by scale
+            const x = (clientX - rect.left - panX) / scale;
+            const y = (clientY - rect.top - panY) / scale;
+            return { x, y };
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('uploadForm').style.display = 'none';
+            downloadBtn.disabled = true;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            segments = [];
+
+            try {
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    segments = result.ducts || [];
+                    imageMetadata = result.image_metadata;
+                    
+                    document.getElementById('telemetryPanel').style.display = 'block';
+                    const stats = result.processing_stats || {};
+                    document.getElementById('telemetryData').innerHTML = `
+                        <p><strong>Total Found:</strong> ${stats.ducts_detected || 0}</p>
+                        <p><strong>Dims Mapped:</strong> ${stats.dimensions_mapped || 0}/${stats.dimensions_found || 0}</p>
+                        <p><strong>Scale:</strong> ${stats.scale_px_per_foot ? (stats.scale_px_per_foot.toFixed(1) + ' px/ft') : 'default'}</p>
+                    `;
+
+                    if (result.annotated_image) {
+                        loadAndDrawImage('data:image/png;base64,' + result.annotated_image);
+                    } else {
+                        const reader = new FileReader();
+                        reader.onload = (e) => loadAndDrawImage(e.target.result);
+                        reader.readAsDataURL(file);
+                    }
+
+                } else {
+                    alert(`Error: ${result.message}`);
+                    resetUI();
+                }
+            } catch (error) {
+                alert(`Request failed: ${error}`);
+                resetUI();
+            }
+        });
+
+        function resetUI() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('uploadForm').style.display = 'block';
+        }
+
+        function loadAndDrawImage(src) {
+            annotatedImage.onload = () => {
+                canvas.width = annotatedImage.width;
+                canvas.height = annotatedImage.height;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(annotatedImage, 0, 0);
+                
+                populateTable();
+                fitToWidth();
+                
+                // Enable Download
+                downloadBtn.disabled = false;
+                resetUI();
+            };
+            annotatedImage.src = src;
+        }
+
+        // =====================
+        // HIT DETECTION LOGIC
+        // =====================
+        canvasContainer.addEventListener('mousemove', (e) => {
+            if (isDragging) return; // Don't trigger hover states while panning
+            
+            const { x, y } = getCanvasCoordinates(e.clientX, e.clientY);
+
+            let hovered = false;
+            for (const seg of segments) {
+                const lines = seg.duct_lines || [];
+                const g = seg.duct_geometry;
+                
+                if (x >= g.x && x <= g.x + g.width && y >= g.y && y <= g.y + g.height) {
+                    for (const line of lines) {
+                        if (_pointNearLine(x, y, line.x1, line.y1, line.x2, line.y2, 20)) {
+                            hovered = true;
+                            break;
+                        }
+                    }
+                    if (!hovered && lines.length === 0) hovered = true;
+                }
+                if (hovered) break;
+            }
+            canvasContainer.style.cursor = hovered ? 'pointer' : 'grab';
+        });
+
+        canvasContainer.addEventListener('click', (e) => {
+            // Differentiate between a click and a drag-release
+            if (Math.abs(e.clientX - startClientX) > 5 || Math.abs(e.clientY - startClientY) > 5) return;
+
+            const { x, y } = getCanvasCoordinates(e.clientX, e.clientY);
+
+            for (const seg of segments) {
+                const lines = seg.duct_lines || [];
+                const g = seg.duct_geometry;
+                let clicked = false;
+                
+                if (x >= g.x && x <= g.x + g.width && y >= g.y && y <= g.y + g.height) {
+                    for (const line of lines) {
+                        if (_pointNearLine(x, y, line.x1, line.y1, line.x2, line.y2, 20)) {
+                            clicked = true;
+                            break;
+                        }
+                    }
+                    if (!clicked && lines.length === 0) clicked = true;
+                }
+                
+                if (clicked) {
+                    showDetails(seg);
+                    break;
+                }
+            }
+        });
+
+        function _pointNearLine(px, py, x1, y1, x2, y2, threshold) {
+            const A = px - x1, B = py - y1, C = x2 - x1, D = y2 - y1;
+            const dot = A * C + B * D;
+            const len_sq = C * C + D * D;
+            let param = -1;
+            
+            if (len_sq !== 0) param = dot / len_sq;
+            
+            let xx, yy;
+            if (param < 0) { xx = x1; yy = y1; } 
+            else if (param > 1) { xx = x2; yy = y2; } 
+            else { xx = x1 + param * C; yy = y1 + param * D; }
+            
+            const dx = px - xx, dy = py - yy;
+            return Math.sqrt(dx * dx + dy * dy) < threshold;
+        }
+
+        // =====================
+        // PAN AND ZOOM EVENT LISTENERS
+        // =====================
+        
+        // Panning (Dragging)
+        canvasContainer.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            canvasContainer.classList.add('panning');
+            startClientX = e.clientX;
+            startClientY = e.clientY;
+            startPanX = panX;
+            startPanY = panY;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            e.preventDefault();
+            const dx = e.clientX - startClientX;
+            const dy = e.clientY - startClientY;
+            panX = startPanX + dx;
+            panY = startPanY + dy;
+            updateTransform();
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDragging = false;
+            canvasContainer.classList.remove('panning');
+        });
+
+        // Mouse Wheel Zoom to Pointer
+        canvasContainer.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            
+            // Get mouse position relative to the container
+            const rect = canvasContainer.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // Determine zoom direction
+            const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+            let newScale = scale * zoomFactor;
+            
+            // Constrain zoom level (between 10% and 500%)
+            newScale = Math.max(0.1, Math.min(5.0, newScale));
+
+            // Calculate the new pan to keep the pixel under the mouse stationary
+            panX = mouseX - (mouseX - panX) * (newScale / scale);
+            panY = mouseY - (mouseY - panY) * (newScale / scale);
+            scale = newScale;
+
+            updateTransform();
+        }, { passive: false });
+
+        // Button Controls
+        document.getElementById('zoomIn').addEventListener('click', () => {
+            scale = Math.min(5.0, scale * 1.25);
+            updateTransform();
+        });
+
+        document.getElementById('zoomOut').addEventListener('click', () => {
+            scale = Math.max(0.1, scale / 1.25);
+            updateTransform();
+        });
+
+        document.getElementById('zoomReset').addEventListener('click', fitToWidth);
+
+        // Download functionality
+        downloadBtn.addEventListener('click', () => {
+            if (!annotatedImage.src || downloadBtn.disabled) return;
+            
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+            link.download = `blueprint_annotated_${timestamp}.png`;
+            
+            // Draw pure canvas state to Data URL
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        });
+
+        // =====================
+        // DOM UPDATES
+        // =====================
+        function showDetails(seg) {
+            detailPanel.style.display = 'block';
+            segmentDetails.innerHTML = `
+                <p><strong>ID:</strong> ${seg.id}</p>
+                <p><strong>Type:</strong> ${seg.type}</p>
+                <p><strong>Class:</strong> ${seg.pressure_class || 'N/A'}</p>
+                <p><strong>Dimensions:</strong> ${seg.dimension || 'Unknown'}</p>
+                <p><strong>Length:</strong> ${seg.real_length_ft?.toFixed(1) || '?'} ft</p>
+                <p><strong>Width (px):</strong> ${seg.width_px}</p>
+                <p><strong>Center:</strong> (${Math.round(seg.center?.x || 0)}, ${Math.round(seg.center?.y || 0)})</p>
+            `;
+        }
+
+        function populateTable() {
+            document.getElementById('tableContainer').style.display = 'block';
+            const tbody = document.querySelector('#summaryTable tbody');
+            tbody.innerHTML = '';
+            
+            const sorted = [...segments].sort((a, b) => {
+                if (a.type < b.type) return -1;
+                if (a.type > b.type) return 1;
+                return (a.dimension || '').localeCompare(b.dimension || '');
+            });
+
+            sorted.forEach(seg => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${seg.id}</td>
+                    <td>${seg.type}</td>
+                    <td>${seg.dimension || 'Unknown'}</td>
+                    <td>${seg.real_length_ft?.toFixed(1) || '?'}</td>
+                    <td>${seg.pressure_class || 'N/A'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    </script>
+</body>
+</html>
