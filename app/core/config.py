@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     RENDER_OVERLAY_ALPHA: float = 0.7  # Transparency of duct overlays (higher = more visible)
     RENDER_FONT_SCALE: float = 0.7  # OpenCV font scale
     
-    GOOGLE_API_KEY:str="AIzaSyBLBtJfMM5GSG5PBRwitSea2opwbU7XDB8"
+    GOOGLE_API_KEY:str=""
 
     # Logging
     LOG_LEVEL: str = "INFO"
